@@ -2577,7 +2577,7 @@ async function backupSingleBot(index) {
     const backupString = JSON.stringify(backupData, null, 2);
     const filename = ((code.name || 'iranbot').replace(/[\\/:*?"<>|]/g, '_').trim() || 'iranbot') + '.iranbot';
     const blob = new Blob([backupString], { type: 'application/x-iranbot-backup' });
-    await saveBotFileToChosenLocation(blob, filename);
+    saveBotFileToChosenLocation(blob, filename);
     updateStatus('✅ ' + (currentLang === 'en' ? 'Backup file saved' : 'فایل پشتیبان ذخیره شد'));
 }
 
@@ -2706,7 +2706,7 @@ document.getElementById('backupBotBtn').addEventListener('click', async function
     const backupString = JSON.stringify(backupData, null, 2);
     const safeName = ((botData.name || 'iranbot').replace(/[\\/:*?"<>|]/g, '_').trim() || 'iranbot');
     const blob = new Blob([backupString], { type: 'application/x-iranbot-backup' });
-    await saveBotFileToChosenLocation(blob, safeName + '.iranbot');
+    saveBotFileToChosenLocation(blob, safeName + '.iranbot');
     updateStatus('✅ ' + (currentLang === 'en' ? 'Backup file saved' : 'فایل پشتیبان ذخیره شد'));
 });;
 
@@ -2733,7 +2733,7 @@ document.getElementById('backupDownloadBtn').addEventListener('click', async fun
         }
         baseName = String(baseName).replace(/[\\/:*?"<>|]+/g, '_').trim() || 'iranbot_backup';
         const blob = new Blob([raw], { type: 'application/x-iranbot-backup' });
-        const ok = await saveBotFileToChosenLocation(blob, baseName + '.iranbot');
+        const ok = saveBotFileToChosenLocation(blob, baseName + '.iranbot');
         if (ok) showToast('✅ ' + (currentLang === 'en' ? 'Backup file saved' : 'فایل پشتیبان ذخیره شد'));
     } catch (err) {
         console.error('backupDownload error:', err);
@@ -4063,7 +4063,7 @@ document.getElementById('modalRename').addEventListener('click', function(e) {
             P('    bot_raw = BOT_INFO_CACHE.get("raw")');
             P('    bot_name = str(getattr(bot_raw, "bot_title", "") or getattr(bot_raw, "title", "") or getattr(bot_raw, "name", "") or "")');
             P('    bot_username = str(getattr(bot_raw, "username", "") or "")');
-            P('    account_info = "نام: {}\nنام کاربری: {}\nآیدی: {}".format(profile_name, username or "ندارد", uid)');
+            P('    account_info = "نام: {}\\nنام کاربری: {}\\nآیدی: {}".format(profile_name, username or "ندارد", uid)');
             P('    message_text = str(attr(message, "text", "message_text", "body", default="") or "")');
             P('    def gregorian_to_jalali(gy, gm, gd):');
             P('        gdm=[0,31,59,90,120,151,181,212,243,273,304,334,365]');
@@ -4511,94 +4511,47 @@ document.getElementById('modalRename').addEventListener('click', function(e) {
    4) Data URL / new tab fallback when download attribute is blocked.
    The browser/OS decides the actual Downloads location when a picker is unavailable. */
 function saveBotFileToChosenLocation(blob, filename){
-    /*
-      Android/WebView-safe save routine.
-      IMPORTANT: do not put an awaited API before the download click. Many
-      WebViews and Android browsers lose the original user gesture after await.
-      Native file pickers are therefore intentionally not the first path.
-    */
+    // دانلود مستقیم؛ بدون File Picker و بدون Share.
+    // هدف این تابع این است که با کلیک کاربر، مرورگر/Android دانلود را شروع کند.
     filename = String(filename || 'iranbot_file').replace(/[\\/:*?"<>|]/g, '_');
-    const isBackup = filename.toLowerCase().endsWith('.iranbot');
-    const mime = isBackup ? 'application/octet-stream' : 'text/plain;charset=utf-8';
-    let triggered = false;
-
-    // 1) Native Android bridges used by several HTML-to-APK/WebView wrappers.
-    // We only call a bridge when the wrapper explicitly exposes it.
     try {
-        const bridge = window.Android || window.android || window.AndroidInterface || window.AppBridge;
-        if (bridge) {
-            if (typeof bridge.downloadFile === 'function') {
-                const reader = new FileReader();
-                reader.onload = function(){
-                    try { bridge.downloadFile(filename, mime, reader.result); triggered = true; } catch(e) {}
-                };
-                reader.readAsDataURL(blob);
-            } else if (typeof bridge.saveFile === 'function') {
-                const reader = new FileReader();
-                reader.onload = function(){
-                    try { bridge.saveFile(filename, mime, reader.result); triggered = true; } catch(e) {}
-                };
-                reader.readAsDataURL(blob);
-            }
-        }
-    } catch(e) {}
-
-    // 2) Standard download attribute. This is synchronous so Android keeps
-    // the click/user activation in WebView and Mi Browser.
-    try {
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
         a.href = url;
         a.download = filename;
         a.setAttribute('download', filename);
-        a.rel = 'noopener';
-        a.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:1px;height:1px;opacity:0;';
+        a.style.display = 'none';
         document.body.appendChild(a);
+        // مهم: این کلیک بلافاصله و در همان call stack کلیک کاربر اجرا می‌شود.
         a.click();
-        triggered = true;
         setTimeout(function(){
             try { a.remove(); } catch(e) {}
             try { URL.revokeObjectURL(url); } catch(e) {}
-        }, 10000);
+        }, 15000);
+        return true;
     } catch(e) {
-        console.warn('Blob download failed:', e);
-    }
-
-    // 3) Data URL fallback. Also triggered without awaiting anything.
-    // Useful for WebViews that do not allow blob: URLs.
-    try {
-        const reader = new FileReader();
-        reader.onload = function(){
-            try {
-                const a2 = document.createElement('a');
-                a2.href = reader.result;
-                a2.download = filename;
-                a2.setAttribute('download', filename);
-                a2.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:1px;height:1px;opacity:0;';
-                document.body.appendChild(a2);
-                a2.click();
-                setTimeout(function(){ try { a2.remove(); } catch(e) {} }, 5000);
-            } catch(e) { console.warn('Data URL download failed:', e); }
-        };
-        reader.readAsDataURL(blob);
-    } catch(e) {}
-
-    // 4) Share fallback. This is intentionally scheduled after the direct
-    // download attempt, so it never consumes the initial tap before download.
-    setTimeout(function(){
+        console.error('Direct download failed:', e);
+        // fallback برای مرورگرهای خیلی قدیمی
         try {
-            if (typeof navigator !== 'undefined' && typeof navigator.share === 'function' && typeof File !== 'undefined') {
-                const file = new File([blob], filename, {type:mime});
-                if (!navigator.canShare || navigator.canShare({files:[file]})) {
-                    navigator.share({title:filename, files:[file]}).catch(function(){});
-                }
-            }
-        } catch(e) {}
-    }, 350);
-
-    // 5) File System Access is offered only as a secondary option. It is not
-    // used automatically because awaiting it first breaks Android WebView taps.
-    return triggered;
+            var reader = new FileReader();
+            reader.onload = function(){
+                try {
+                    var b = document.createElement('a');
+                    b.href = reader.result;
+                    b.download = filename;
+                    b.setAttribute('download', filename);
+                    b.style.display = 'none';
+                    document.body.appendChild(b);
+                    b.click();
+                    setTimeout(function(){ try { b.remove(); } catch(_) {} }, 5000);
+                } catch(_) {}
+            };
+            reader.readAsDataURL(blob);
+            return true;
+        } catch(_) {
+            return false;
+        }
+    }
 }
 
 async function downloadBotSource() {
@@ -4625,7 +4578,7 @@ async function downloadBotSource() {
 
             try {
                 const blob = new Blob([code], { type: 'text/x-python;charset=utf-8' });
-                const saved = await saveBotFileToChosenLocation(blob, getGeneratedBotFileName());
+                const saved = saveBotFileToChosenLocation(blob, getGeneratedBotFileName());
                 if (saved) {
                     updateStatus('💾 ' + t.btnDownloadBot);
                     showToast('✅ ' + t.btnDownloadBot);
