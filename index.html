@@ -4510,147 +4510,95 @@ document.getElementById('modalRename').addEventListener('click', function(e) {
    3) Blob URL + <a download> (works on most modern/legacy browsers)
    4) Data URL / new tab fallback when download attribute is blocked.
    The browser/OS decides the actual Downloads location when a picker is unavailable. */
-async function saveBotFileToChosenLocation(blob, filename){
+function saveBotFileToChosenLocation(blob, filename){
+    /*
+      Android/WebView-safe save routine.
+      IMPORTANT: do not put an awaited API before the download click. Many
+      WebViews and Android browsers lose the original user gesture after await.
+      Native file pickers are therefore intentionally not the first path.
+    */
     filename = String(filename || 'iranbot_file').replace(/[\\/:*?"<>|]/g, '_');
     const isBackup = filename.toLowerCase().endsWith('.iranbot');
+    const mime = isBackup ? 'application/octet-stream' : 'text/plain;charset=utf-8';
+    let triggered = false;
 
-    // 1) Native file picker (when the browser really supports it).
-    if (typeof window.showSaveFilePicker === 'function') {
-        try {
-            const handle = await window.showSaveFilePicker({
-                suggestedName: filename,
-                types: [{
-                    description: isBackup ? 'IranBot backup' : 'Python bot file',
-                    accept: isBackup
-                        ? {'application/octet-stream': ['.iranbot']}
-                        : {'text/plain': ['.py']}
-                }]
-            });
-            const writable = await handle.createWritable();
-            await writable.write(blob);
-            await writable.close();
-            return true;
-        } catch (err) {
-            if (err && err.name === 'AbortError') return false;
-            console.warn('Native save picker failed:', err);
-        }
-    }
-
-    /*
-     * IMPORTANT:
-     * On many Android browsers (including Mi Browser), awaiting Web Share or
-     * another async API first consumes the user activation. A later <a>.click()
-     * can then be blocked. Therefore the normal download MUST happen before
-     * navigator.share().
-     */
-    let objectUrl = null;
+    // 1) Native Android bridges used by several HTML-to-APK/WebView wrappers.
+    // We only call a bridge when the wrapper explicitly exposes it.
     try {
-        const downloadBlob = new Blob([blob], {
-            type: isBackup ? 'application/octet-stream' : 'text/plain;charset=utf-8'
-        });
-        objectUrl = URL.createObjectURL(downloadBlob);
-
-        const a = document.createElement('a');
-        a.href = objectUrl;
-        a.download = filename;
-        a.setAttribute('download', filename);
-        a.target = '_self';
-        a.rel = 'noopener';
-        a.style.display = 'none';
-        document.body.appendChild(a);
-
-        // One immediate click while the original user gesture is still active.
-        a.click();
-
-        // A second attempt helps some Android WebViews/Mi Browser versions.
-        setTimeout(function(){
-            try { a.click(); } catch(e) {}
-        }, 120);
-
-        setTimeout(function(){
-            try { a.remove(); } catch(e) {}
-            try { URL.revokeObjectURL(objectUrl); } catch(e) {}
-        }, 5000);
-
-        // Do not await here. The download has already been triggered.
-        return true;
-    } catch (err) {
-        console.warn('Direct browser download failed:', err);
-        if (objectUrl) {
-            try { URL.revokeObjectURL(objectUrl); } catch(e) {}
-        }
-    }
-
-    // 3) File Share fallback. Reached only if normal download is unavailable.
-    try {
-        if (typeof navigator !== 'undefined' &&
-            typeof navigator.share === 'function' &&
-            typeof File !== 'undefined') {
-            const file = new File([blob], filename, {
-                type: isBackup ? 'application/octet-stream' : 'text/plain'
-            });
-            if (!navigator.canShare || navigator.canShare({files:[file]})) {
-                await navigator.share({
-                    title: filename,
-                    files: [file]
-                });
-                return true;
+        const bridge = window.Android || window.android || window.AndroidInterface || window.AppBridge;
+        if (bridge) {
+            if (typeof bridge.downloadFile === 'function') {
+                const reader = new FileReader();
+                reader.onload = function(){
+                    try { bridge.downloadFile(filename, mime, reader.result); triggered = true; } catch(e) {}
+                };
+                reader.readAsDataURL(blob);
+            } else if (typeof bridge.saveFile === 'function') {
+                const reader = new FileReader();
+                reader.onload = function(){
+                    try { bridge.saveFile(filename, mime, reader.result); triggered = true; } catch(e) {}
+                };
+                reader.readAsDataURL(blob);
             }
         }
-    } catch (err) {
-        console.warn('Web Share failed:', err);
+    } catch(e) {}
+
+    // 2) Standard download attribute. This is synchronous so Android keeps
+    // the click/user activation in WebView and Mi Browser.
+    try {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        a.setAttribute('download', filename);
+        a.rel = 'noopener';
+        a.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:1px;height:1px;opacity:0;';
+        document.body.appendChild(a);
+        a.click();
+        triggered = true;
+        setTimeout(function(){
+            try { a.remove(); } catch(e) {}
+            try { URL.revokeObjectURL(url); } catch(e) {}
+        }, 10000);
+    } catch(e) {
+        console.warn('Blob download failed:', e);
     }
 
-    // 4) Data-URL fallback for older browsers that reject blob: downloads.
+    // 3) Data URL fallback. Also triggered without awaiting anything.
+    // Useful for WebViews that do not allow blob: URLs.
     try {
         const reader = new FileReader();
-        const dataUrl = await new Promise(function(resolve, reject){
-            reader.onload = function(){ resolve(reader.result); };
-            reader.onerror = reject;
-            reader.readAsDataURL(blob);
-        });
-        const a2 = document.createElement('a');
-        a2.href = dataUrl;
-        a2.download = filename;
-        a2.setAttribute('download', filename);
-        a2.style.display = 'none';
-        document.body.appendChild(a2);
-        a2.click();
-        setTimeout(function(){ try { a2.remove(); } catch(e) {} }, 1000);
-        return true;
-    } catch (err) {
-        console.warn('Data URL fallback failed:', err);
-    }
+        reader.onload = function(){
+            try {
+                const a2 = document.createElement('a');
+                a2.href = reader.result;
+                a2.download = filename;
+                a2.setAttribute('download', filename);
+                a2.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:1px;height:1px;opacity:0;';
+                document.body.appendChild(a2);
+                a2.click();
+                setTimeout(function(){ try { a2.remove(); } catch(e) {} }, 5000);
+            } catch(e) { console.warn('Data URL download failed:', e); }
+        };
+        reader.readAsDataURL(blob);
+    } catch(e) {}
 
-    // 5) Last resort: show the actual file contents, never an empty page.
-    try {
-        const reader2 = new FileReader();
-        const fileText = await new Promise(function(resolve, reject){
-            reader2.onload = function(){ resolve(reader2.result); };
-            reader2.onerror = reject;
-            reader2.readAsText(blob);
-        });
-        const w = window.open('', '_blank');
-        if (w) {
-            const escaped = String(fileText)
-                .replace(/&/g,'&amp;').replace(/</g,'&lt;')
-                .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-            w.document.open();
-            w.document.write(
-                '<!doctype html><meta charset="utf-8"><title>' +
-                filename.replace(/[<>&"]/g,'') +
-                '</title><body><p>برای ذخیره، از منوی مرورگر گزینه Download/Save را بزنید.</p>' +
-                '<pre style="white-space:pre-wrap;word-break:break-word">' +
-                escaped + '</pre></body>'
-            );
-            w.document.close();
-            return true;
-        }
-    } catch (err) {
-        console.warn('File-view fallback failed:', err);
-    }
+    // 4) Share fallback. This is intentionally scheduled after the direct
+    // download attempt, so it never consumes the initial tap before download.
+    setTimeout(function(){
+        try {
+            if (typeof navigator !== 'undefined' && typeof navigator.share === 'function' && typeof File !== 'undefined') {
+                const file = new File([blob], filename, {type:mime});
+                if (!navigator.canShare || navigator.canShare({files:[file]})) {
+                    navigator.share({title:filename, files:[file]}).catch(function(){});
+                }
+            }
+        } catch(e) {}
+    }, 350);
 
-    return false;
+    // 5) File System Access is offered only as a secondary option. It is not
+    // used automatically because awaiting it first breaks Android WebView taps.
+    return triggered;
 }
 
 async function downloadBotSource() {
