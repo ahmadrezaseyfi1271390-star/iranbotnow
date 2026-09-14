@@ -3,9 +3,6 @@ name: Run Registration Bot
 on:
   workflow_dispatch:
 
-permissions:
-  contents: read
-
 jobs:
 
   run-bot:
@@ -13,6 +10,9 @@ jobs:
     runs-on: ubuntu-latest
 
     timeout-minutes: 360
+
+    permissions:
+      contents: read
 
     steps:
 
@@ -31,6 +31,6 @@ jobs:
 
       - name: Run bot
         env:
-          GITHUB_STORAGE_TOKEN: ${{ secrets.GITHUB_STORAGE_TOKEN }}
+          STORAGE_TOKEN: ${{ secrets.STORAGE_TOKEN }}
         run: |
           python bots/registration_bot/main.py
