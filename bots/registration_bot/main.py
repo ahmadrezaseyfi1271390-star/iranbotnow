@@ -7,22 +7,32 @@ import requests
 from rubka import Robot, Message
 
 
-RUBIKA_TOKEN = "'CDIBFG0LOWKACQPCLOMUZYMXHATMXOPJXNOZEJVDBLAGQYTOWBOQRTZWGHZPQTLS'"
+# =========================================================
+# تنظیمات ربات
+# =========================================================
 
-ADMIN_ID = "'b0FXnfh0BDAM07e25d345fec6dc6ca42'"
+RUBIKA_TOKEN = 'CDIBFG0LOWKACQPCLOMUZYMXHATMXOPJXNOZEJVDBLAGQYTOWBOQRTZWGHZPQTLS'
 
-GITHUB_OWNER = "'ahmadrezaseyfi1271390-star'"
-GITHUB_REPO = "'iranbotnow'"
-GITHUB_BRANCH = "'main'"
+ADMIN_ID = 'b0FXnfh0BDAM07e25d345fec6dc6ca42'
 
-DATA_PATH = "'bots/registration_bot/data.json'"
+GITHUB_OWNER = 'ahmadrezaseyfi1271390-star'
+GITHUB_REPO = 'iranbotnow'
+GITHUB_BRANCH = 'main'
+
+DATA_PATH = 'bots/registration_bot/data.json'
+
+
+# =========================================================
+# GitHub Storage Token
+# =========================================================
 
 STORAGE_TOKEN = os.getenv("STORAGE_TOKEN")
 
 
 if not STORAGE_TOKEN:
+
     raise RuntimeError(
-        "STORAGE_TOKEN environment variable is not configured"
+        "STORAGE_TOKEN در GitHub Actions تنظیم نشده است."
     )
 
 
@@ -35,245 +45,366 @@ GITHUB_API = (
 
 
 HEADERS = {
-    "Authorization": "Bearer " + STORAGE_TOKEN,
-    "Accept": "application/vnd.github+json",
-    "X-GitHub-Api-Version": "2022-11-28"
+
+    "Authorization":
+        "Bearer " + STORAGE_TOKEN,
+
+    "Accept":
+        "application/vnd.github+json",
+
+    "X-GitHub-Api-Version":
+        "2022-11-28"
 }
 
 
-bot = Robot(token=RUBIKA_TOKEN)
+# =========================================================
+# ساخت ربات
+# =========================================================
 
+bot = Robot(
+    token=RUBIKA_TOKEN
+)
+
+
+# =========================================================
+# Session کاربران
+# =========================================================
 
 sessions = {}
 
 
 # =========================================================
-# DATA
+# دریافت اطلاعات از GitHub
 # =========================================================
 
 def load_data():
 
+    url = (
+        GITHUB_API
+        + "/contents/"
+        + DATA_PATH
+    )
+
+
     try:
-        url = GITHUB_API + "/contents/" + DATA_PATH
 
         response = requests.get(
+
             url,
+
             headers=HEADERS,
-            params={"ref": GITHUB_BRANCH},
+
+            params={
+                "ref": GITHUB_BRANCH
+            },
+
             timeout=30
         )
 
+
         if response.status_code == 404:
-            return {"users": []}, None
+
+            return {
+                "users": []
+            }, None
+
 
         response.raise_for_status()
 
+
         result = response.json()
 
-        content = result.get("content", "")
+
         sha = result.get("sha")
 
+
+        content = result.get(
+            "content",
+            ""
+        )
+
+
         if not content:
-            return {"users": []}, sha
+
+            return {
+                "users": []
+            }, sha
+
 
         decoded = base64.b64decode(
-            content.replace("\n", "")
+
+            content.replace(
+                "\n",
+                ""
+            )
+
         ).decode("utf-8")
 
-        data = json.loads(decoded)
 
-        if not isinstance(data, dict):
-            data = {"users": []}
+        data = json.loads(
+            decoded
+        )
+
+
+        if not isinstance(
+            data,
+            dict
+        ):
+
+            data = {
+                "users": []
+            }
+
 
         if "users" not in data:
+
             data["users"] = []
+
 
         return data, sha
 
+
     except Exception as e:
-        print("load_data error:", e)
-        return {"users": []}, None
+
+        print(
+            "خطا در خواندن اطلاعات:",
+            e
+        )
 
 
-def save_data(data, sha=None):
+        return {
+            "users": []
+        }, None
+
+
+# =========================================================
+# ذخیره اطلاعات در GitHub
+# =========================================================
+
+def save_data(
+    data,
+    sha=None
+):
+
+    url = (
+        GITHUB_API
+        + "/contents/"
+        + DATA_PATH
+    )
+
 
     try:
-        url = GITHUB_API + "/contents/" + DATA_PATH
 
         content = json.dumps(
+
             data,
+
             ensure_ascii=False,
+
             indent=2
         )
 
+
         encoded = base64.b64encode(
-            content.encode("utf-8")
+
+            content.encode(
+                "utf-8"
+            )
+
         ).decode("utf-8")
 
+
         body = {
-            "message": "Update registration data",
-            "content": encoded,
-            "branch": GITHUB_BRANCH
+
+            "message":
+                "Update registration data",
+
+            "content":
+                encoded,
+
+            "branch":
+                GITHUB_BRANCH
         }
 
+
         if sha:
+
             body["sha"] = sha
 
+
         response = requests.put(
+
             url,
+
             headers=HEADERS,
+
             json=body,
+
             timeout=30
         )
 
-        if response.status_code in (200, 201):
-            print("Data saved to GitHub")
+
+        if response.status_code in (
+            200,
+            201
+        ):
+
+            print(
+                "اطلاعات در GitHub ذخیره شد."
+            )
+
             return True
 
-        print("save_data error:")
-        print(response.status_code)
-        print(response.text)
+
+        print(
+            "خطا در ذخیره اطلاعات:"
+        )
+
+        print(
+            response.status_code
+        )
+
+        print(
+            response.text
+        )
+
 
         return False
+
 
     except Exception as e:
-        print("save_data exception:", e)
+
+        print(
+            "Save error:",
+            e
+        )
+
         return False
 
 
 # =========================================================
-# HELPERS
+# رمزگذاری رمز عبور
 # =========================================================
 
-def hash_password(password):
+def hash_password(
+    password
+):
 
     return hashlib.sha256(
-        password.encode("utf-8")
+
+        password.encode(
+            "utf-8"
+        )
+
     ).hexdigest()
 
 
-def get_user_id(message):
-
-    possible_fields = [
-        "sender_id",
-        "author_id",
-        "user_id"
-    ]
-
-    for field in possible_fields:
-
-        try:
-            value = getattr(message, field, None)
-
-            if value is not None:
-                return str(value)
-
-        except Exception:
-            pass
-
-    return "unknown"
-
-
-def get_text(message):
-
-    try:
-        text = getattr(message, "text", None)
-
-        if text is not None:
-            return str(text).strip()
-
-    except Exception:
-        pass
-
-    return ""
-
-
-def send_text(message, text):
-
-    try:
-        message.reply(text)
-        return
-
-    except Exception:
-        pass
-
-    try:
-        bot.send_message(
-            message.chat_id,
-            text
-        )
-    except Exception as e:
-        print("send error:", e)
-
-
 # =========================================================
-# START
+# /start
 # =========================================================
 
-@bot.on_message(commands=["start"])
-def start(message):
+@bot.on_message(
+    commands=["start"]
+)
+async def start(
+    bot: Robot,
+    message: Message
+):
 
-    user_id = get_user_id(message)
+    user_id = str(
+        message.sender_id
+    )
+
 
     data, sha = load_data()
 
+
     exists = False
 
-    for user in data.get("users", []):
 
-        if str(user.get("id")) == str(user_id):
+    for user in data.get(
+        "users",
+        []
+    ):
+
+        if str(
+            user.get("id")
+        ) == user_id:
+
             exists = True
+
             break
 
+
     sessions[user_id] = {
-        "step": "name",
-        "existing": exists
+
+        "step":
+            "name",
+
+        "exists":
+            exists
     }
 
-    send_text(
-        message,
+
+    await message.reply(
         "لطفا اسم خود را وارد کنید."
     )
 
 
 # =========================================================
-# MESSAGE
+# پیام‌های کاربران
 # =========================================================
 
 @bot.on_message()
-def message_handler(message):
+async def messages(
+    bot: Robot,
+    message: Message
+):
 
-    user_id = get_user_id(message)
-    text = get_text(message)
+    user_id = str(
+        message.sender_id
+    )
+
+
+    text = message.text
+
 
     if not text:
+
         return
 
 
+    text = text.strip()
+
+
     # =====================================================
-    # ID
+    # آیدی
     # =====================================================
 
     if text == "آیدی":
 
-        send_text(
-            message,
-            "`" + str(user_id) + "`"
+        await message.reply(
+
+            "`"
+            + user_id
+            + "`"
+
         )
 
         return
 
 
     # =====================================================
-    # ADMIN STATS
+    # آمار
     # =====================================================
 
     if text == "امار":
 
-        if str(user_id) != str(ADMIN_ID):
+        if user_id != str(
+            ADMIN_ID
+        ):
 
-            send_text(
-                message,
+            await message.reply(
                 "شما دسترسی به این بخش را ندارید."
             )
 
@@ -282,34 +413,65 @@ def message_handler(message):
 
         data, sha = load_data()
 
-        users = data.get("users", [])
+
+        users = data.get(
+            "users",
+            []
+        )
+
 
         if not users:
 
-            send_text(
-                message,
+            await message.reply(
                 "هنوز کاربری ثبت نشده است."
             )
 
             return
 
 
-        lines = []
+        result = []
 
-        lines.append(
+        result.append(
+
             "تعداد کاربران: "
             + str(len(users))
+
         )
 
-        lines.append("")
+        result.append("")
 
-        for index, user in enumerate(users, 1):
 
-            uid = str(user.get("id", ""))
-            name = str(user.get("name", ""))
-            username = str(user.get("username", ""))
+        for index, user in enumerate(
+            users,
+            1
+        ):
 
-            lines.append(
+            name = str(
+                user.get(
+                    "name",
+                    ""
+                )
+            )
+
+
+            username = str(
+                user.get(
+                    "username",
+                    ""
+                )
+            )
+
+
+            uid = str(
+                user.get(
+                    "id",
+                    ""
+                )
+            )
+
+
+            result.append(
+
                 str(index)
                 + ". "
                 + name
@@ -317,74 +479,99 @@ def message_handler(message):
                 + username
                 + " | "
                 + uid
+
             )
 
 
-        send_text(
-            message,
-            "\n".join(lines)
+        await message.reply(
+            "\n".join(result)
         )
 
         return
 
 
     # =====================================================
-    # REGISTRATION
+    # بررسی Session
     # =====================================================
 
-    session = sessions.get(user_id)
+    session = sessions.get(
+        user_id
+    )
+
 
     if not session:
 
-        send_text(
-            message,
-            "برای شروع ثبت نام /start را ارسال کنید."
+        await message.reply(
+
+            "برای شروع ثبت نام "
+            "/start "
+            "را ارسال کنید."
+
         )
 
         return
 
 
-    step = session.get("step")
+    step = session.get(
+        "step"
+    )
 
 
     # =====================================================
-    # NAME
+    # مرحله اسم
     # =====================================================
 
     if step == "name":
 
-        sessions[user_id]["name"] = text
-        sessions[user_id]["step"] = "username"
+        sessions[user_id][
+            "name"
+        ] = text
 
-        send_text(
-            message,
-            "اسم ثبت شد لطفا نام کاربری دارای @ رو ارسال کنید."
+
+        sessions[user_id][
+            "step"
+        ] = "username"
+
+
+        await message.reply(
+
+            "اسم ثبت شد لطفا نام کاربری "
+            "دارای @ رو ارسال کنید."
+
         )
 
         return
 
 
     # =====================================================
-    # USERNAME
+    # مرحله نام کاربری
     # =====================================================
 
     if step == "username":
 
         if not text.startswith("@"):
 
-            send_text(
-                message,
-                "نام کاربری باید با @ شروع شود."
+            await message.reply(
+
+                "نام کاربری باید "
+                "با @ شروع شود."
+
             )
 
             return
 
 
-        sessions[user_id]["username"] = text
-        sessions[user_id]["step"] = "password"
+        sessions[user_id][
+            "username"
+        ] = text
 
-        send_text(
-            message,
+
+        sessions[user_id][
+            "step"
+        ] = "password"
+
+
+        await message.reply(
             "لطفا رمز عبوری ارسال کنید."
         )
 
@@ -392,81 +579,132 @@ def message_handler(message):
 
 
     # =====================================================
-    # PASSWORD
+    # مرحله رمز عبور
     # =====================================================
 
     if step == "password":
 
-        password_hash = hash_password(text)
+        password_hash = hash_password(
+            text
+        )
+
 
         data, sha = load_data()
 
-        users = data.get("users", [])
+
+        users = data.get(
+            "users",
+            []
+        )
 
 
         already_exists = False
 
+
         for user in users:
 
-            if str(user.get("id")) == str(user_id):
+            if str(
+                user.get("id")
+            ) == user_id:
 
                 already_exists = True
+
                 break
 
 
+        # -------------------------------------------------
+        # کاربر قبلاً ثبت شده
+        # -------------------------------------------------
+
         if already_exists:
 
-            send_text(
-                message,
+            await message.reply(
                 "شما قبلا ثبت نام شده بودید"
             )
+
+
+        # -------------------------------------------------
+        # کاربر جدید
+        # -------------------------------------------------
 
         else:
 
             new_user = {
-                "id": str(user_id),
-                "name": sessions[user_id].get("name", ""),
-                "username": sessions[user_id].get("username", ""),
-                "password_hash": password_hash
+
+                "id":
+                    user_id,
+
+                "name":
+                    sessions[user_id].get(
+                        "name",
+                        ""
+                    ),
+
+                "username":
+                    sessions[user_id].get(
+                        "username",
+                        ""
+                    ),
+
+                "password_hash":
+                    password_hash
             }
 
-            users.append(new_user)
+
+            users.append(
+                new_user
+            )
+
 
             data["users"] = users
 
-            saved = save_data(data, sha)
 
-            if saved:
+            success = save_data(
+                data,
+                sha
+            )
 
-                send_text(
-                    message,
+
+            if success:
+
+                await message.reply(
                     "شما تازه ثبت نام شدید"
                 )
 
             else:
 
-                send_text(
-                    message,
-                    "خطا در ذخیره اطلاعات. دوباره تلاش کنید."
+                await message.reply(
+
+                    "خطا در ذخیره اطلاعات. "
+                    "دوباره تلاش کنید."
+
                 )
 
                 return
 
 
-        send_text(
-            message,
-            "`" + str(user_id) + "`"
+        await message.reply(
+
+            "`"
+            + user_id
+            + "`"
+
         )
 
-        sessions.pop(user_id, None)
 
-        return
+        sessions.pop(
+            user_id,
+            None
+        )
 
 
 # =========================================================
-# RUN
+# اجرای ربات
 # =========================================================
 
-print("Registration bot is starting...")
+print(
+    "Registration bot is starting..."
+)
+
 
 bot.run()
